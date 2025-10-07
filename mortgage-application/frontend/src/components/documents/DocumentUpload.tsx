@@ -389,7 +389,7 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ applicationId, onUpload
                       </Typography>
                       {document.aiProcessed && (
                         <Chip
-                          label="AI Processed"
+                          label="Content Extracted"
                           size="small"
                           color="success"
                           sx={{ ml: 1, mt: 0.5 }}
@@ -458,11 +458,11 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ applicationId, onUpload
         </Box>
       )}
 
-      {/* Document Intelligence Results */}
+      {/* Document Extraction Results */}
       {Object.keys(intelligenceResults).length > 0 && (
         <Box sx={{ mt: 3 }}>
           <Typography variant="h6" gutterBottom>
-            Document Intelligence Results
+            Document Extraction Results
           </Typography>
           {Object.entries(intelligenceResults).map(([documentId, result]) => {
             const document = documents.find(d => d.id === documentId);
