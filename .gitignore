@@ -1,0 +1,27 @@
+# macOS
+.DS_Store
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log
+pnpm-lock.yaml
+
+# TypeScript build outputs
+mortgage-application/backend/dist/
+mortgage-application/frontend/build/
+
+# Environment files
+.env
+mortgage-application/backend/.env
+mortgage-application/frontend/.env
+
+# App uploads and logs
+mortgage-application/backend/uploads/
+logs/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+ENV/
