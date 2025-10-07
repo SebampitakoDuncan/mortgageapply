@@ -27,5 +27,6 @@ router.delete('/:documentId', (req, res) => documentController.deleteDocument(re
 // Document Intelligence endpoints
 router.post('/extract-text/:documentId', (req, res) => documentController.extractTextFromDocument(req, res));
 router.post('/analyze/:documentId', (req, res) => documentController.analyzeDocumentStructure(req, res));
+router.post('/analyze-llm/:documentId', (req, res) => documentController.analyzeLLMDocument(req, res));
 
 export default router;

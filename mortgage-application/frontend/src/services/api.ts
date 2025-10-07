@@ -131,12 +131,19 @@ class ApiService {
         return response.data;
       }
 
-      async analyzeDocument(documentId: string): Promise<ApiResponse<any>> {
-        const response = await this.api.post(`/api/documents/analyze/${documentId}`, {}, {
-          timeout: 90000, // 90 second timeout for AI analysis
-        });
-        return response.data;
-      }
+  async analyzeDocument(documentId: string): Promise<ApiResponse<any>> {
+    const response = await this.api.post(`/api/documents/analyze/${documentId}`, {}, {
+      timeout: 90000, // 90 second timeout for AI analysis
+    });
+    return response.data;
+  }
+
+  async analyzeLLMDocument(documentId: string): Promise<ApiResponse<any>> {
+    const response = await this.api.post(`/api/documents/analyze-llm/${documentId}`, {}, {
+      timeout: 120000, // 120 second timeout for LLM analysis
+    });
+    return response.data;
+  }
 
   async submitApplication(id: string): Promise<ApiResponse<Application>> {
     const response = await this.api.post(`/api/applications/${id}/submit`);

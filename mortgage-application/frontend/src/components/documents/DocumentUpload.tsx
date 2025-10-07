@@ -1,4 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   Box,
   Button,
@@ -260,30 +262,36 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ applicationId, onUpload
     }
   };
 
-  const handleAnalyzeDocument = async (documentId: string) => {
+  const handleLLMAnalyzeDocument = async (documentId: string) => {
     try {
       setProcessingIntelligence(documentId);
       setError('');
       
-      const response = await apiService.analyzeDocument(documentId);
+      const response = await apiService.analyzeLLMDocument(documentId);
       
       if (response.success && response.data) {
         setIntelligenceResults(prev => ({
           ...prev,
           [documentId]: {
-            type: 'document_analysis',
-            ...response.data
+            type: 'llm_analysis',
+            llmAnalysis: response.data.llmAnalysis,
+            extractedText: response.data.extractedText,
+            modelUsed: response.data.modelUsed,
+            confidenceScore: response.data.confidenceScore,
+            wordCount: response.data.wordCount,
+            analysisTimeMs: response.data.analysisTimeMs,
+            tokensAnalyzed: response.data.tokensAnalyzed
           }
         }));
         
         // Reload documents to update AI processed status
         await loadDocuments();
       } else {
-        setError(response.error?.message || 'Failed to analyze document');
+        setError(response.error?.message || 'Failed to analyze document with LLM');
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to analyze document');
-      console.error('Document analysis error:', err);
+      setError(err.message || 'Failed to analyze document with LLM');
+      console.error('LLM analysis error:', err);
     } finally {
       setProcessingIntelligence('');
     }
@@ -418,10 +426,10 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ applicationId, onUpload
                         </IconButton>
                         <IconButton
                           size="small"
-                          onClick={() => handleAnalyzeDocument(document.id)}
+                          onClick={() => handleLLMAnalyzeDocument(document.id)}
                           disabled={loading || processingIntelligence === document.id}
-                          title="Analyze Document"
-                          sx={{ color: 'secondary.main' }}
+                          title="AI Banking Analysis"
+                          sx={{ color: 'warning.main' }}
                         >
                           {processingIntelligence === document.id ? (
                             <CircularProgress size={16} />
@@ -534,6 +542,248 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ applicationId, onUpload
                             </li>
                           ))}
                         </ul>
+                      </Box>
+                    )}
+                  </Box>
+                )}
+
+                {result.type === 'llm_analysis' && (
+                  <Box>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      🏦 AI Banking Analysis (Confidence: {(result.confidenceScore * 100).toFixed(1)}%)
+                    </Typography>
+                    <Typography variant="caption" display="block" gutterBottom>
+                      Model: {result.modelUsed} • Words: {result.wordCount} • Tokens: {result.tokensAnalyzed} • Time: {result.analysisTimeMs}ms
+                    </Typography>
+                    
+                    <Paper variant="outlined" sx={{ 
+                      p: 3, 
+                      mt: 1, 
+                      bgcolor: 'grey.50', 
+                      border: '1px solid', 
+                      borderColor: 'grey.300',
+                      '& h1, & h2, & h3, & h4, & h5, & h6': {
+                        color: '#000000',
+                        fontWeight: 'bold',
+                        mt: 2,
+                        mb: 1,
+                        '&:first-of-type': { mt: 0 }
+                      },
+                      '& h1': { fontSize: '1.25rem' },
+                      '& h2': { fontSize: '1.1rem' },
+                      '& h3': { fontSize: '1rem' },
+                      '& p': {
+                        mb: 1.5,
+                        lineHeight: 1.6,
+                        color: '#000000',
+                        '&:last-child': { mb: 0 }
+                      },
+                      '& ul, & ol': {
+                        pl: 2,
+                        mb: 1.5,
+                        '& li': {
+                          mb: 0.5,
+                          lineHeight: 1.5,
+                          color: '#000000'
+                        }
+                      },
+                      '& strong': {
+                        fontWeight: 'bold',
+                        color: '#000000'
+                      },
+                      '& em': {
+                        fontStyle: 'italic',
+                        color: '#333333'
+                      },
+                      '& code': {
+                        bgcolor: 'grey.200',
+                        px: 0.5,
+                        py: 0.25,
+                        borderRadius: 0.5,
+                        fontSize: '0.875rem',
+                        fontFamily: 'monospace',
+                        color: '#000000'
+                      },
+                      '& table': {
+                        width: '100%',
+                        borderCollapse: 'collapse',
+                        mb: 2,
+                        mt: 1,
+                        '& th, & td': {
+                          border: '1px solid #333333',
+                          padding: '8px 12px',
+                          textAlign: 'left',
+                          color: '#000000'
+                        },
+                        '& th': {
+                          backgroundColor: '#f5f5f5',
+                          fontWeight: 'bold'
+                        },
+                        '& tr:nth-of-type(even)': {
+                          backgroundColor: '#fafafa'
+                        }
+                      },
+                      '& blockquote': {
+                        borderLeft: '4px solid #333333',
+                        pl: 2,
+                        ml: 0,
+                        mb: 2,
+                        fontStyle: 'italic',
+                        color: '#333333'
+                      },
+                      '& hr': {
+                        border: 'none',
+                        borderTop: '1px solid #333333',
+                        my: 2
+                      }
+                    }}>
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          p: ({ children }) => (
+                            <Typography variant="body2" component="p" sx={{ mb: 1.5, lineHeight: 1.6, color: '#000000', '&:last-child': { mb: 0 } }}>
+                              {children}
+                            </Typography>
+                          ),
+                          h1: ({ children }) => (
+                            <Typography variant="h6" component="h1" sx={{ color: '#000000', fontWeight: 'bold', mt: 2, mb: 1, '&:first-of-type': { mt: 0 } }}>
+                              {children}
+                            </Typography>
+                          ),
+                          h2: ({ children }) => (
+                            <Typography variant="subtitle1" component="h2" sx={{ color: '#000000', fontWeight: 'bold', mt: 2, mb: 1, '&:first-of-type': { mt: 0 } }}>
+                              {children}
+                            </Typography>
+                          ),
+                          h3: ({ children }) => (
+                            <Typography variant="subtitle2" component="h3" sx={{ color: '#000000', fontWeight: 'bold', mt: 1.5, mb: 0.75 }}>
+                              {children}
+                            </Typography>
+                          ),
+                          h4: ({ children }) => (
+                            <Typography variant="body1" component="h4" sx={{ color: '#000000', fontWeight: 'bold', mt: 1.5, mb: 0.75 }}>
+                              {children}
+                            </Typography>
+                          ),
+                          h5: ({ children }) => (
+                            <Typography variant="body2" component="h5" sx={{ color: '#000000', fontWeight: 'bold', mt: 1, mb: 0.5 }}>
+                              {children}
+                            </Typography>
+                          ),
+                          h6: ({ children }) => (
+                            <Typography variant="caption" component="h6" sx={{ color: '#000000', fontWeight: 'bold', mt: 1, mb: 0.5, display: 'block' }}>
+                              {children}
+                            </Typography>
+                          ),
+                          strong: ({ children }) => (
+                            <Typography component="strong" sx={{ fontWeight: 'bold', color: '#000000' }}>
+                              {children}
+                            </Typography>
+                          ),
+                          em: ({ children }) => (
+                            <Typography component="em" sx={{ fontStyle: 'italic', color: '#333333' }}>
+                              {children}
+                            </Typography>
+                          ),
+                          li: ({ children }) => (
+                            <Typography component="li" variant="body2" sx={{ mb: 0.5, lineHeight: 1.5, color: '#000000' }}>
+                              {children}
+                            </Typography>
+                          ),
+                          table: ({ children }) => (
+                            <Box component="table" sx={{ 
+                              width: '100%', 
+                              borderCollapse: 'collapse', 
+                              mb: 2, 
+                              mt: 1,
+                              border: '1px solid #333333'
+                            }}>
+                              {children}
+                            </Box>
+                          ),
+                          th: ({ children }) => (
+                            <Box component="th" sx={{ 
+                              border: '1px solid #333333',
+                              padding: '8px 12px',
+                              textAlign: 'left',
+                              backgroundColor: '#f5f5f5',
+                              fontWeight: 'bold',
+                              color: '#000000'
+                            }}>
+                              {children}
+                            </Box>
+                          ),
+                          td: ({ children }) => (
+                            <Box component="td" sx={{ 
+                              border: '1px solid #333333',
+                              padding: '8px 12px',
+                              textAlign: 'left',
+                              color: '#000000'
+                            }}>
+                              {children}
+                            </Box>
+                          ),
+                          blockquote: ({ children }) => (
+                            <Box component="blockquote" sx={{
+                              borderLeft: '4px solid #333333',
+                              pl: 2,
+                              ml: 0,
+                              mb: 2,
+                              fontStyle: 'italic',
+                              color: '#333333'
+                            }}>
+                              {children}
+                            </Box>
+                          ),
+                          code: ({ children, ...props }) => {
+                            const inline = (props as any).inline;
+                            return inline ? (
+                              <Typography component="code" sx={{
+                                bgcolor: 'grey.200',
+                                px: 0.5,
+                                py: 0.25,
+                                borderRadius: 0.5,
+                                fontSize: '0.875rem',
+                                fontFamily: 'monospace',
+                                color: '#000000'
+                              }}>
+                                {children}
+                              </Typography>
+                            ) : (
+                              <Box component="pre" sx={{
+                                bgcolor: 'grey.200',
+                                p: 2,
+                                borderRadius: 1,
+                                overflow: 'auto',
+                                mb: 2,
+                                fontFamily: 'monospace',
+                                fontSize: '0.875rem',
+                                color: '#000000'
+                              }}>
+                                <code>{children}</code>
+                              </Box>
+                            );
+                          }
+                        }}
+                      >
+                        {result.llmAnalysis || 'No analysis available'}
+                      </ReactMarkdown>
+                    </Paper>
+
+                    {result.extractedText && (
+                      <Box sx={{ mt: 2 }}>
+                        <Typography variant="body2" fontWeight="medium" gutterBottom>
+                          Extracted Text:
+                        </Typography>
+                        <Paper variant="outlined" sx={{ p: 1, maxHeight: 200, overflow: 'auto', bgcolor: 'grey.50' }}>
+                          <Typography variant="caption" component="pre" sx={{ 
+                            whiteSpace: 'pre-wrap', 
+                            fontFamily: 'monospace',
+                            fontSize: '0.75rem'
+                          }}>
+                            {result.extractedText.substring(0, 1000)}{result.extractedText.length > 1000 ? '...' : ''}
+                          </Typography>
+                        </Paper>
                       </Box>
                     )}
                   </Box>

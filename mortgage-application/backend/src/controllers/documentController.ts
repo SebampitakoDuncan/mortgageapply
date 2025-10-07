@@ -431,6 +431,147 @@ export class DocumentController {
     return;
   }
 
+  async analyzeLLMDocument(req: Request, res: Response) {
+    try {
+      console.log('🧠 Advanced LLM document analysis request received');
+      const { documentId } = req.params;
+
+      if (!documentId) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'MISSING_DOCUMENT_ID',
+            message: 'Document ID is required'
+          },
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      const document = await documentModel.findById(documentId);
+
+      if (!document) {
+        return res.status(404).json({
+          success: false,
+          error: {
+            code: 'DOCUMENT_NOT_FOUND',
+            message: 'Document not found'
+          },
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      if (!fs.existsSync(document.file_path)) {
+        return res.status(404).json({
+          success: false,
+          error: {
+            code: 'FILE_NOT_FOUND',
+            message: 'File not found on server'
+          },
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      const supportedTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+      if (!supportedTypes.includes(document.mime_type)) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'UNSUPPORTED_FILE_TYPE',
+            message: 'LLM analysis not supported for this file type'
+          },
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      const aiServiceUrl = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+      
+      try {
+        const formData = new FormData();
+        const fileStream = fs.createReadStream(document.file_path);
+        formData.append('file', fileStream, {
+          filename: document.original_name,
+          contentType: document.mime_type
+        });
+
+        console.log(`🧠 Calling AI service for LLM analysis at ${aiServiceUrl}/analyze-with-llm`);
+        
+        const aiResponse = await axios.post(`${aiServiceUrl}/analyze-with-llm`, formData, {
+          headers: {
+            ...formData.getHeaders(),
+          },
+          timeout: 90000, // 90 second timeout for LLM processing
+        });
+
+        console.log('🧠 LLM analysis response received');
+
+        const aiAnalysis = {
+          llm_analysis: aiResponse.data.data.llm_analysis,
+          extracted_text: aiResponse.data.data.extracted_text,
+          model_used: aiResponse.data.data.model_used,
+          confidence_score: aiResponse.data.data.confidence_score,
+          word_count: aiResponse.data.data.word_count,
+          analysis_time_ms: aiResponse.data.data.analysis_time_ms,
+          tokens_analyzed: aiResponse.data.data.tokens_analyzed,
+          processed_at: new Date().toISOString()
+        };
+
+        await documentModel.updateAiAnalysis(documentId, aiAnalysis);
+
+        const response: ApiResponse = {
+          success: true,
+          data: {
+            documentId: documentId,
+            filename: document.original_name,
+            llmAnalysis: aiResponse.data.data.llm_analysis,
+            extractedText: aiResponse.data.data.extracted_text,
+            modelUsed: aiResponse.data.data.model_used,
+            confidenceScore: aiResponse.data.data.confidence_score,
+            wordCount: aiResponse.data.data.word_count,
+            analysisTimeMs: aiResponse.data.data.analysis_time_ms,
+            tokensAnalyzed: aiResponse.data.data.tokens_analyzed
+          },
+          message: 'Advanced mortgage banking analysis completed successfully',
+          timestamp: new Date().toISOString()
+        };
+
+        res.json(response);
+      } catch (aiError: any) {
+        console.error('AI service error:', aiError.message);
+        
+        if (aiError.code === 'ECONNREFUSED') {
+          return res.status(503).json({
+            success: false,
+            error: {
+              code: 'AI_SERVICE_UNAVAILABLE',
+              message: 'Document intelligence service is currently unavailable. Please try again later.'
+            },
+            timestamp: new Date().toISOString()
+          });
+        }
+
+        return res.status(500).json({
+          success: false,
+          error: {
+            code: 'AI_PROCESSING_ERROR',
+            message: 'Failed to process document with AI service'
+          },
+          timestamp: new Date().toISOString()
+        });
+      }
+    } catch (error) {
+      console.error('LLM Analysis error:', error);
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'LLM_ANALYSIS_ERROR',
+          message: 'Failed to analyze document with LLM'
+        },
+        timestamp: new Date().toISOString()
+      });
+    }
+    return;
+  }
+
   async analyzeDocumentStructure(req: Request, res: Response) {
     try {
       console.log('🔍 Document structure analysis request received');
