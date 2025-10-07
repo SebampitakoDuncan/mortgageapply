@@ -123,6 +123,21 @@ class ApiService {
         return response.data;
       }
 
+      // Document Intelligence endpoints
+      async extractTextFromDocument(documentId: string): Promise<ApiResponse<any>> {
+        const response = await this.api.post(`/api/documents/extract-text/${documentId}`, {}, {
+          timeout: 60000, // 60 second timeout for AI processing
+        });
+        return response.data;
+      }
+
+      async analyzeDocument(documentId: string): Promise<ApiResponse<any>> {
+        const response = await this.api.post(`/api/documents/analyze/${documentId}`, {}, {
+          timeout: 90000, // 90 second timeout for AI analysis
+        });
+        return response.data;
+      }
+
   async submitApplication(id: string): Promise<ApiResponse<Application>> {
     const response = await this.api.post(`/api/applications/${id}/submit`);
     return response.data;

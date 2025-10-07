@@ -22,6 +22,9 @@ import {
   Delete as DeleteIcon,
   Download as DownloadIcon,
   Description as DocumentIcon,
+  Psychology as IntelligenceIcon,
+  TextFields as ExtractTextIcon,
+  Analytics as AnalyzeIcon,
 } from '@mui/icons-material';
 import { useDropzone } from 'react-dropzone';
 import apiService from '../../services/api';
@@ -46,6 +49,8 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ applicationId, onUpload
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string>('');
   const [selectedDocumentType, setSelectedDocumentType] = useState<string>('');
+  const [processingIntelligence, setProcessingIntelligence] = useState<string>(''); // documentId being processed
+  const [intelligenceResults, setIntelligenceResults] = useState<{[key: string]: any}>({});
 
   const loadDocuments = useCallback(async () => {
     try {
@@ -226,6 +231,69 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ applicationId, onUpload
     return docType ? docType.label : type;
   };
 
+  const handleExtractText = async (documentId: string) => {
+    try {
+      setProcessingIntelligence(documentId);
+      setError('');
+      
+      const response = await apiService.extractTextFromDocument(documentId);
+      
+      if (response.success && response.data) {
+        setIntelligenceResults(prev => ({
+          ...prev,
+          [documentId]: {
+            type: 'text_extraction',
+            ...response.data
+          }
+        }));
+        
+        // Reload documents to update AI processed status
+        await loadDocuments();
+      } else {
+        setError(response.error?.message || 'Failed to extract text from document');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to extract text from document');
+      console.error('Text extraction error:', err);
+    } finally {
+      setProcessingIntelligence('');
+    }
+  };
+
+  const handleAnalyzeDocument = async (documentId: string) => {
+    try {
+      setProcessingIntelligence(documentId);
+      setError('');
+      
+      const response = await apiService.analyzeDocument(documentId);
+      
+      if (response.success && response.data) {
+        setIntelligenceResults(prev => ({
+          ...prev,
+          [documentId]: {
+            type: 'document_analysis',
+            ...response.data
+          }
+        }));
+        
+        // Reload documents to update AI processed status
+        await loadDocuments();
+      } else {
+        setError(response.error?.message || 'Failed to analyze document');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to analyze document');
+      console.error('Document analysis error:', err);
+    } finally {
+      setProcessingIntelligence('');
+    }
+  };
+
+  const isDocumentSupported = (mimeType: string) => {
+    const supportedTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+    return supportedTypes.includes(mimeType);
+  };
+
   return (
     <Box>
       <Typography variant="h6" gutterBottom>
@@ -331,26 +399,143 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ applicationId, onUpload
                   }
                 />
                 <ListItemSecondaryAction>
-                  <IconButton
-                    edge="end"
-                    onClick={() => handleDownloadDocument(document)}
-                    disabled={loading}
-                    sx={{ mr: 1 }}
-                  >
-                    <DownloadIcon />
-                  </IconButton>
-                  <IconButton
-                    edge="end"
-                    onClick={() => handleDeleteDocument(document.id)}
-                    disabled={loading}
-                    color="error"
-                  >
-                    <DeleteIcon />
-                  </IconButton>
+                  <Box sx={{ display: 'flex', gap: 0.5 }}>
+                    {/* Document Intelligence Buttons */}
+                    {isDocumentSupported(document.mimeType) && (
+                      <>
+                        <IconButton
+                          size="small"
+                          onClick={() => handleExtractText(document.id)}
+                          disabled={loading || processingIntelligence === document.id}
+                          title="Extract Text"
+                          sx={{ color: 'primary.main' }}
+                        >
+                          {processingIntelligence === document.id ? (
+                            <CircularProgress size={16} />
+                          ) : (
+                            <ExtractTextIcon fontSize="small" />
+                          )}
+                        </IconButton>
+                        <IconButton
+                          size="small"
+                          onClick={() => handleAnalyzeDocument(document.id)}
+                          disabled={loading || processingIntelligence === document.id}
+                          title="Analyze Document"
+                          sx={{ color: 'secondary.main' }}
+                        >
+                          {processingIntelligence === document.id ? (
+                            <CircularProgress size={16} />
+                          ) : (
+                            <AnalyzeIcon fontSize="small" />
+                          )}
+                        </IconButton>
+                      </>
+                    )}
+                    
+                    {/* Standard Actions */}
+                    <IconButton
+                      size="small"
+                      onClick={() => handleDownloadDocument(document)}
+                      disabled={loading}
+                      title="Download"
+                    >
+                      <DownloadIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      onClick={() => handleDeleteDocument(document.id)}
+                      disabled={loading}
+                      color="error"
+                      title="Delete"
+                    >
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
                 </ListItemSecondaryAction>
               </ListItem>
             ))}
           </List>
+        </Box>
+      )}
+
+      {/* Document Intelligence Results */}
+      {Object.keys(intelligenceResults).length > 0 && (
+        <Box sx={{ mt: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            Document Intelligence Results
+          </Typography>
+          {Object.entries(intelligenceResults).map(([documentId, result]) => {
+            const document = documents.find(d => d.id === documentId);
+            return (
+              <Paper key={documentId} sx={{ p: 2, mb: 2 }}>
+                <Typography variant="subtitle1" gutterBottom>
+                  <IntelligenceIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                  {document?.originalName || 'Unknown Document'}
+                </Typography>
+                
+                {result.type === 'text_extraction' && (
+                  <Box>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Text Extraction Results (Confidence: {(result.confidenceScore * 100).toFixed(1)}%)
+                    </Typography>
+                    <Typography variant="caption" display="block" gutterBottom>
+                      Method: {result.processingMethod} • Words: {result.wordCount}
+                      {result.pageCount && ` • Pages: ${result.pageCount}`}
+                    </Typography>
+                    <Paper variant="outlined" sx={{ p: 1, maxHeight: 200, overflow: 'auto', bgcolor: 'grey.50' }}>
+                      <Typography variant="body2" component="pre" sx={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>
+                        {result.extractedText || 'No text extracted'}
+                      </Typography>
+                    </Paper>
+                  </Box>
+                )}
+
+                {result.type === 'document_analysis' && (
+                  <Box>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Document Analysis Results (Confidence: {(result.confidenceScore * 100).toFixed(1)}%)
+                    </Typography>
+                    <Typography variant="caption" display="block" gutterBottom>
+                      Document Type: <Chip label={result.documentType} size="small" sx={{ ml: 0.5 }} />
+                    </Typography>
+                    
+                    {result.extractedFields && Object.keys(result.extractedFields).length > 0 && (
+                      <Box sx={{ mt: 1 }}>
+                        <Typography variant="body2" fontWeight="medium" gutterBottom>
+                          Extracted Fields:
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                          {Object.entries(result.extractedFields).map(([key, value]) => (
+                            <Chip
+                              key={key}
+                              label={`${key}: ${Array.isArray(value) ? value.join(', ') : value}`}
+                              size="small"
+                              variant="outlined"
+                            />
+                          ))}
+                        </Box>
+                      </Box>
+                    )}
+
+                    {result.suggestions && result.suggestions.length > 0 && (
+                      <Box sx={{ mt: 1 }}>
+                        <Typography variant="body2" fontWeight="medium" gutterBottom>
+                          Suggestions:
+                        </Typography>
+                        <ul style={{ margin: 0, paddingLeft: '1.2em' }}>
+                          {result.suggestions.map((suggestion: string, index: number) => (
+                            <li key={index}>
+                              <Typography variant="caption">{suggestion}</Typography>
+                            </li>
+                          ))}
+                        </ul>
+                      </Box>
+                    )}
+                  </Box>
+                )}
+              </Paper>
+            );
+          })}
         </Box>
       )}
     </Box>

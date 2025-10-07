@@ -24,4 +24,8 @@ router.get('/download/:documentId', (req, res) => documentController.downloadDoc
 // Delete document
 router.delete('/:documentId', (req, res) => documentController.deleteDocument(req, res));
 
+// Document Intelligence endpoints
+router.post('/extract-text/:documentId', (req, res) => documentController.extractTextFromDocument(req, res));
+router.post('/analyze/:documentId', (req, res) => documentController.analyzeDocumentStructure(req, res));
+
 export default router;

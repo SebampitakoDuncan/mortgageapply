@@ -96,6 +96,18 @@ export class DocumentModel {
     
     return stats;
   }
+
+  async updateAiAnalysis(id: string, aiAnalysis: any): Promise<Document | null> {
+    const query = `
+      UPDATE documents 
+      SET ai_processed = true, ai_analysis = $2, updated_at = NOW()
+      WHERE id = $1
+      RETURNING *
+    `;
+
+    const result = await db.query(query, [id, JSON.stringify(aiAnalysis)]);
+    return result.rows[0] || null;
+  }
 }
 
 export const documentModel = new DocumentModel();

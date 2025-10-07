@@ -3,6 +3,8 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
+import axios from 'axios';
+import FormData from 'form-data';
 import { ApiResponse, Document } from '../types';
 import { documentModel } from '../models/Document';
 
@@ -279,6 +281,279 @@ export class DocumentController {
         error: {
           code: 'DELETE_ERROR',
           message: 'Failed to delete document'
+        },
+        timestamp: new Date().toISOString()
+      });
+    }
+    return;
+  }
+
+  async extractTextFromDocument(req: Request, res: Response) {
+    try {
+      console.log('🧠 Document intelligence request received');
+      const { documentId } = req.params;
+
+      if (!documentId) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'MISSING_DOCUMENT_ID',
+            message: 'Document ID is required'
+          },
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      // Get document from database
+      const document = await documentModel.findById(documentId);
+
+      if (!document) {
+        return res.status(404).json({
+          success: false,
+          error: {
+            code: 'DOCUMENT_NOT_FOUND',
+            message: 'Document not found'
+          },
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      // Check if file exists
+      if (!fs.existsSync(document.file_path)) {
+        return res.status(404).json({
+          success: false,
+          error: {
+            code: 'FILE_NOT_FOUND',
+            message: 'File not found on server'
+          },
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      // Check if document type is supported for text extraction
+      const supportedTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+      if (!supportedTypes.includes(document.mime_type)) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'UNSUPPORTED_FILE_TYPE',
+            message: 'Text extraction not supported for this file type'
+          },
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      // Call AI service for text extraction
+      const aiServiceUrl = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+      
+      try {
+        // Create form data with the file
+        const formData = new FormData();
+        const fileStream = fs.createReadStream(document.file_path);
+        formData.append('file', fileStream, {
+          filename: document.original_name,
+          contentType: document.mime_type
+        });
+
+        console.log(`🧠 Calling AI service at ${aiServiceUrl}/extract-text`);
+        
+        const aiResponse = await axios.post(`${aiServiceUrl}/extract-text`, formData, {
+          headers: {
+            ...formData.getHeaders(),
+          },
+          timeout: 30000, // 30 second timeout
+        });
+
+        console.log('🧠 AI service response received');
+
+        // Update document with AI analysis
+        const aiAnalysis = {
+          extracted_text: aiResponse.data.data.extracted_text,
+          confidence_score: aiResponse.data.data.confidence_score,
+          processing_method: aiResponse.data.data.processing_method,
+          word_count: aiResponse.data.data.word_count,
+          processed_at: new Date().toISOString()
+        };
+
+        await documentModel.updateAiAnalysis(documentId, aiAnalysis);
+
+        const response: ApiResponse = {
+          success: true,
+          data: {
+            documentId: documentId,
+            filename: document.original_name,
+            extractedText: aiResponse.data.data.extracted_text,
+            confidenceScore: aiResponse.data.data.confidence_score,
+            processingMethod: aiResponse.data.data.processing_method,
+            wordCount: aiResponse.data.data.word_count,
+            pageCount: aiResponse.data.data.page_count
+          },
+          message: 'Text extracted successfully',
+          timestamp: new Date().toISOString()
+        };
+
+        res.json(response);
+      } catch (aiError: any) {
+        console.error('AI service error:', aiError.message);
+        
+        // Check if it's a connection error
+        if (aiError.code === 'ECONNREFUSED') {
+          return res.status(503).json({
+            success: false,
+            error: {
+              code: 'AI_SERVICE_UNAVAILABLE',
+              message: 'Document intelligence service is currently unavailable. Please try again later.'
+            },
+            timestamp: new Date().toISOString()
+          });
+        }
+
+        return res.status(500).json({
+          success: false,
+          error: {
+            code: 'AI_PROCESSING_ERROR',
+            message: 'Failed to process document with AI service'
+          },
+          timestamp: new Date().toISOString()
+        });
+      }
+    } catch (error) {
+      console.error('Extract text error:', error);
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'EXTRACTION_ERROR',
+          message: 'Failed to extract text from document'
+        },
+        timestamp: new Date().toISOString()
+      });
+    }
+    return;
+  }
+
+  async analyzeDocumentStructure(req: Request, res: Response) {
+    try {
+      console.log('🔍 Document structure analysis request received');
+      const { documentId } = req.params;
+
+      if (!documentId) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'MISSING_DOCUMENT_ID',
+            message: 'Document ID is required'
+          },
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      // Get document from database
+      const document = await documentModel.findById(documentId);
+
+      if (!document) {
+        return res.status(404).json({
+          success: false,
+          error: {
+            code: 'DOCUMENT_NOT_FOUND',
+            message: 'Document not found'
+          },
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      // Check if file exists
+      if (!fs.existsSync(document.file_path)) {
+        return res.status(404).json({
+          success: false,
+          error: {
+            code: 'FILE_NOT_FOUND',
+            message: 'File not found on server'
+          },
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      // Call AI service for document analysis
+      const aiServiceUrl = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+      
+      try {
+        // Create form data with the file
+        const formData = new FormData();
+        const fileStream = fs.createReadStream(document.file_path);
+        formData.append('file', fileStream, {
+          filename: document.original_name,
+          contentType: document.mime_type
+        });
+
+        console.log(`🔍 Calling AI service at ${aiServiceUrl}/analyze-document`);
+        
+        const aiResponse = await axios.post(`${aiServiceUrl}/analyze-document`, formData, {
+          headers: {
+            ...formData.getHeaders(),
+          },
+          timeout: 45000, // 45 second timeout for analysis
+        });
+
+        console.log('🔍 AI analysis response received');
+
+        // Update document with comprehensive AI analysis
+        const aiAnalysis = {
+          document_type: aiResponse.data.data.document_type,
+          extracted_fields: aiResponse.data.data.extracted_fields,
+          confidence_score: aiResponse.data.data.confidence_score,
+          raw_text: aiResponse.data.data.raw_text,
+          suggestions: aiResponse.data.data.suggestions,
+          analyzed_at: new Date().toISOString()
+        };
+
+        await documentModel.updateAiAnalysis(documentId, aiAnalysis);
+
+        const response: ApiResponse = {
+          success: true,
+          data: {
+            documentId: documentId,
+            filename: document.original_name,
+            documentType: aiResponse.data.data.document_type,
+            extractedFields: aiResponse.data.data.extracted_fields,
+            confidenceScore: aiResponse.data.data.confidence_score,
+            suggestions: aiResponse.data.data.suggestions,
+            rawText: aiResponse.data.data.raw_text
+          },
+          message: 'Document analyzed successfully',
+          timestamp: new Date().toISOString()
+        };
+
+        res.json(response);
+      } catch (aiError: any) {
+        console.error('AI analysis service error:', aiError.message);
+        
+        if (aiError.code === 'ECONNREFUSED') {
+          return res.status(503).json({
+            success: false,
+            error: {
+              code: 'AI_SERVICE_UNAVAILABLE',
+              message: 'Document analysis service is currently unavailable. Please try again later.'
+            },
+            timestamp: new Date().toISOString()
+          });
+        }
+
+        return res.status(500).json({
+          success: false,
+          error: {
+            code: 'AI_ANALYSIS_ERROR',
+            message: 'Failed to analyze document structure'
+          },
+          timestamp: new Date().toISOString()
+        });
+      }
+    } catch (error) {
+      console.error('Analyze document error:', error);
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'ANALYSIS_ERROR',
+          message: 'Failed to analyze document'
         },
         timestamp: new Date().toISOString()
       });
