@@ -482,8 +482,13 @@ const DocumentUpload: React.FC<DocumentUploadProps> = ({ applicationId, onUpload
                       Method: {result.processingMethod} • Words: {result.wordCount}
                       {result.pageCount && ` • Pages: ${result.pageCount}`}
                     </Typography>
-                    <Paper variant="outlined" sx={{ p: 1, maxHeight: 200, overflow: 'auto', bgcolor: 'grey.50' }}>
-                      <Typography variant="body2" component="pre" sx={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>
+                    <Paper variant="outlined" sx={{ p: 2, maxHeight: 500, overflow: 'auto', bgcolor: 'grey.50', mt: 1 }}>
+                      <Typography variant="body2" component="pre" sx={{ 
+                        whiteSpace: 'pre-wrap', 
+                        fontFamily: 'monospace',
+                        fontSize: '0.875rem',
+                        lineHeight: 1.6
+                      }}>
                         {result.extractedText || 'No text extracted'}
                       </Typography>
                     </Paper>
