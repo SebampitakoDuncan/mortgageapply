@@ -20,6 +20,7 @@ import {
 } from '@mui/icons-material';
 import ChloeIcon from '../common/ChloeIcon';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import apiService from '../../services/api';
 
 interface ChatMessage {
@@ -279,6 +280,7 @@ const AIChat: React.FC<AIChatProps> = ({ open, applicationId, onClose }) => {
                   >
                     {message.role === 'assistant' ? (
                       <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
                         components={{
                           p: ({ children }) => (
                             <Typography 
@@ -359,6 +361,80 @@ const AIChat: React.FC<AIChatProps> = ({ open, applicationId, onClose }) => {
                             >
                               {children}
                             </Box>
+                          ),
+                          table: ({ children }) => (
+                            <Box
+                              component="table"
+                              sx={{
+                                width: '100%',
+                                borderCollapse: 'collapse',
+                                mb: 2,
+                                border: '1px solid #e0e0e0',
+                                borderRadius: 1,
+                                overflow: 'hidden',
+                                fontSize: '0.85rem'
+                              }}
+                            >
+                              {children}
+                            </Box>
+                          ),
+                          thead: ({ children }) => (
+                            <Box component="thead" sx={{ bgcolor: '#f5f5f5' }}>
+                              {children}
+                            </Box>
+                          ),
+                          tbody: ({ children }) => (
+                            <Box component="tbody">
+                              {children}
+                            </Box>
+                          ),
+                          tr: ({ children }) => (
+                            <Box component="tr" sx={{ '&:nth-of-type(even)': { bgcolor: '#fafafa' } }}>
+                              {children}
+                            </Box>
+                          ),
+                          th: ({ children }) => (
+                            <Box
+                              component="th"
+                              sx={{
+                                p: 1.5,
+                                textAlign: 'left',
+                                fontWeight: 600,
+                                borderBottom: '1px solid #e0e0e0',
+                                borderRight: '1px solid #e0e0e0',
+                                '&:last-child': { borderRight: 'none' },
+                                fontSize: '0.8rem',
+                                color: '#333'
+                              }}
+                            >
+                              {children}
+                            </Box>
+                          ),
+                          td: ({ children }) => (
+                            <Box
+                              component="td"
+                              sx={{
+                                p: 1.5,
+                                borderBottom: '1px solid #e0e0e0',
+                                borderRight: '1px solid #e0e0e0',
+                                '&:last-child': { borderRight: 'none' },
+                                fontSize: '0.8rem',
+                                lineHeight: 1.4
+                              }}
+                            >
+                              {children}
+                            </Box>
+                          ),
+                          hr: () => (
+                            <Box
+                              sx={{
+                                width: '100%',
+                                height: '1px',
+                                bgcolor: '#e0e0e0',
+                                my: 2,
+                                border: 'none'
+                              }}
+                            />
                           )
                         }}
                       >
