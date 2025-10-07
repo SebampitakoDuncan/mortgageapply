@@ -25,3 +25,8 @@ __pycache__/
 *.pyc
 .venv/
 ENV/
+
+# Project docs to ignore
+MORTGAGE_APPLICATION_PRD.md
+MORTGAGE_PROTOTYPE_PLAN.md
+test_ai_integration.py
