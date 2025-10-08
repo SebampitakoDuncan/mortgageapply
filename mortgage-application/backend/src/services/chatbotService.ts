@@ -5,7 +5,7 @@ interface ChatMessage {
   content: string;
 }
 
-interface OpenRouterResponse {
+interface LLMResponse {
   choices: Array<{
     message: {
       content: string;
@@ -14,24 +14,21 @@ interface OpenRouterResponse {
 }
 
 export class ChatbotService {
-  private apiKey: string;
-  private baseURL = 'https://openrouter.ai/api/v1';
+  private lmStudioURL: string;
+  private model: string;
 
   constructor() {
-    this.apiKey = process.env.OPENROUTER_API_KEY || '';
-    if (!this.apiKey) {
-      console.warn('OPENROUTER_API_KEY not found in environment variables');
-    } else {
-      console.log(`✅ ChatbotService initialized with API key: ${this.apiKey.substring(0, 10)}...`);
-    }
+    // LM Studio configuration (only option)
+    this.lmStudioURL = process.env.LM_STUDIO_URL || 'http://127.0.0.1:1234';
+    this.model = process.env.LM_STUDIO_MODEL || 'google/gemma-3-1b';
+    
+    console.log(`🏠 ChatbotService initialized with LM Studio:`);
+    console.log(`   - URL: ${this.lmStudioURL}`);
+    console.log(`   - Model: ${this.model}`);
   }
 
   async generateResponse(userMessage: string, applicationId?: string): Promise<string> {
     try {
-      if (!this.apiKey) {
-        throw new Error('OpenRouter API key not configured');
-      }
-
       const systemPrompt = `You are Chloe, a friendly mortgage specialist assistant for an Australian bank. You help customers with their home loan applications in a conversational, approachable way.
 
 CHAT RESPONSE GUIDELINES:
@@ -53,76 +50,67 @@ ${applicationId ? `Current application ID: ${applicationId}` : ''}`;
         { role: 'user', content: userMessage }
       ];
 
-      const response = await axios.post<OpenRouterResponse>(
-        `${this.baseURL}/chat/completions`,
+      console.log(`🏠 Using LM Studio at ${this.lmStudioURL}...`);
+      const response = await axios.post<LLMResponse>(
+        `${this.lmStudioURL}/v1/chat/completions`,
         {
-          model: 'openai/gpt-oss-20b:free',
+          model: this.model,
           messages: messages,
           max_tokens: 450,
           temperature: 0.7,
         },
         {
           headers: {
-            'Authorization': `Bearer ${this.apiKey}`,
             'Content-Type': 'application/json',
-            'HTTP-Referer': 'http://localhost:3000',
-            'X-Title': 'Mortgage Application Assistant',
           },
+          timeout: 30000, // 30 second timeout
         }
       );
 
       const assistantMessage = response.data.choices[0]?.message?.content;
       
       if (!assistantMessage) {
-        throw new Error('No response from OpenRouter API');
+        throw new Error('No response from LM Studio');
       }
 
+      console.log('✅ LM Studio response received');
       return assistantMessage;
 
     } catch (error) {
       console.error('Chatbot service error:', error);
       
       if (axios.isAxiosError(error)) {
-        if (error.response?.status === 401) {
-          throw new Error('Invalid API key for OpenRouter');
-        } else if (error.response?.status === 429) {
-          throw new Error('Rate limit exceeded. Please try again later.');
+        if (error.code === 'ECONNREFUSED') {
+          throw new Error('LM Studio is not running. Please start LM Studio and ensure the server is running on http://127.0.0.1:1234');
         } else if (error.response?.status === 500) {
-          throw new Error('OpenRouter service is temporarily unavailable');
+          throw new Error('LM Studio service error. Please check the model is loaded correctly.');
         }
       }
       
-      throw new Error('Failed to generate response. Please try again.');
+      throw new Error('Failed to generate response. Please ensure LM Studio is running.');
     }
   }
 
   async checkHealth(): Promise<boolean> {
     try {
-      if (!this.apiKey) {
-        return false;
-      }
-
-      // Simple health check by making a minimal request
       await axios.post(
-        `${this.baseURL}/chat/completions`,
+        `${this.lmStudioURL}/v1/chat/completions`,
         {
-          model: 'openai/gpt-oss-20b:free',
+          model: this.model,
           messages: [{ role: 'user', content: 'Hello' }],
           max_tokens: 1,
         },
         {
           headers: {
-            'Authorization': `Bearer ${this.apiKey}`,
             'Content-Type': 'application/json',
-            'HTTP-Referer': 'http://localhost:3000',
-            'X-Title': 'Mortgage Application Assistant',
           },
+          timeout: 10000, // 10 second timeout for health check
         }
       );
-
+      console.log('✅ LM Studio health check passed');
       return true;
     } catch (error) {
-      console.error('Chatbot health check failed:', error);
+      console.error('❌ LM Studio health check failed:', error);
       return false;
     }
   }

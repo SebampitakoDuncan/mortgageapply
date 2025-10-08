@@ -1,10 +1,13 @@
+// Load environment variables FIRST before any other imports
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
-import dotenv from 'dotenv';
 
 // Import routes
 import authRoutes from './routes/authRoutes';
@@ -15,9 +18,6 @@ import aiRoutes from './routes/aiRoutes';
 // Import utilities
 import db from './utils/database';
 import redis from './utils/redis';
-
-// Load environment variables
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5001;

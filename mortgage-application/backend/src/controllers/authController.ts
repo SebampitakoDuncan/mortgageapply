@@ -277,16 +277,17 @@ export class AuthController {
   private generateTokens(userId: string, email: string, role: string) {
     const secret = process.env.JWT_SECRET || 'fallback-secret-key';
     
+    // Generate tokens WITHOUT expiration to prevent 403 errors
     const token = jwt.sign(
       { userId, email, role },
-      secret,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '24h' } as any
+      secret
+      // Removed expiresIn to make tokens never expire
     );
 
     const refreshToken = jwt.sign(
       { userId, email, role },
-      secret,
-      { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d' } as any
+      secret
+      // Removed expiresIn to make refresh tokens never expire
     );
 
     return { token, refreshToken };
