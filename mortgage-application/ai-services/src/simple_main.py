@@ -12,9 +12,90 @@ import json
 from dotenv import load_dotenv
 from fast_pdf_extractor import extract_pdf_text_fast
 import time
+import re
+import tempfile
+import subprocess
 
 # Load environment variables
 load_dotenv()
+
+async def _extract_pdf_with_ocr(pdf_content: bytes, filename: str) -> dict:
+    """
+    Extract text from PDF using OCR (for scanned PDFs)
+    Uses pdf2image + tesseract for OCR processing
+    """
+    try:
+        # Check if required tools are available
+        try:
+            subprocess.run(['pdftoppm', '-h'], capture_output=True, check=True)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            raise Exception("pdftoppm not available. Install poppler-utils: brew install poppler")
+        
+        try:
+            subprocess.run(['tesseract', '--version'], capture_output=True, check=True)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            raise Exception("tesseract not available. Install tesseract: brew install tesseract")
+        
+        # Create temporary files
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_pdf:
+            temp_pdf.write(pdf_content)
+            temp_pdf_path = temp_pdf.name
+        
+        try:
+            # Convert PDF pages to images using pdftoppm
+            with tempfile.TemporaryDirectory() as temp_dir:
+                # Convert PDF to PNG images
+                subprocess.run([
+                    'pdftoppm', 
+                    '-png', 
+                    '-r', '300',  # 300 DPI for good OCR quality
+                    temp_pdf_path, 
+                    f'{temp_dir}/page'
+                ], check=True, capture_output=True)
+                
+                # Find all generated image files
+                import glob
+                image_files = sorted(glob.glob(f'{temp_dir}/page-*.png'))
+                
+                if not image_files:
+                    raise Exception("No images generated from PDF")
+                
+                # OCR each page
+                all_text = []
+                for image_file in image_files:
+                    try:
+                        # Run tesseract OCR
+                        result = subprocess.run([
+                            'tesseract', 
+                            image_file, 
+                            'stdout',
+                            '-l', 'eng',  # English language
+                            '--psm', '1'  # Automatic page segmentation with OSD
+                        ], capture_output=True, text=True, check=True)
+                        
+                        page_text = result.stdout.strip()
+                        if page_text:
+                            all_text.append(page_text)
+                    
+                    except subprocess.CalledProcessError as e:
+                        print(f"OCR failed for {image_file}: {e}")
+                        continue
+                
+                combined_text = '\n\n'.join(all_text)
+                
+                return {
+                    "text": combined_text,
+                    "method": "OCR (tesseract)",
+                    "pages_processed": len(image_files),
+                    "pages_with_text": len(all_text)
+                }
+        
+        finally:
+            os.unlink(temp_pdf_path)
+    
+    except Exception as e:
+        print(f"OCR processing failed: {str(e)}")
+        return {"text": "", "error": str(e)}
 
 app = FastAPI(title="Fast Document Intelligence API", version="2.0.0")
 
@@ -65,6 +146,27 @@ async def extract_text_from_document(file: UploadFile = File(...)):
             if 'error' in result:
                 raise HTTPException(status_code=500, detail=result['error'])
             
+            # Check if text extraction was successful (more than just whitespace)
+            extracted_text = result["text"].strip()
+            word_count = len(extracted_text.split()) if extracted_text else 0
+            
+            # If no meaningful text was extracted, try OCR
+            if word_count == 0 or len(extracted_text) < 10:
+                print(f"📄 PDF text extraction yielded minimal content ({word_count} words). Attempting OCR...")
+                try:
+                    ocr_result = await _extract_pdf_with_ocr(content, file.filename)
+                    if ocr_result and ocr_result.get("text", "").strip():
+                        extracted_text = ocr_result["text"]
+                        word_count = len(extracted_text.split()) if extracted_text else 0
+                        result["method"] = f"{result['method']} + OCR"
+                        result["text"] = extracted_text
+                        print(f"✅ OCR successful: {word_count} words extracted")
+                    else:
+                        print("❌ OCR also failed to extract meaningful text")
+                except Exception as e:
+                    print(f"❌ OCR failed: {str(e)}")
+                    # Continue with original result even if OCR fails
+            
             total_time = (time.time() - start_time) * 1000
             
             return {
@@ -73,14 +175,14 @@ async def extract_text_from_document(file: UploadFile = File(...)):
                     "filename": file.filename,
                     "file_type": file.content_type,
                     "extracted_text": result["text"],
-                    "confidence_score": 0.95,  # High confidence for direct PDF text
+                    "confidence_score": 0.95 if word_count > 0 else 0.3,  # Lower confidence for failed extraction
                     "processing_method": result["method"],
-                    "word_count": len(result["text"].split()) if result["text"] else 0,
+                    "word_count": word_count,
                     "page_count": result["page_count"],
                     "extraction_time_ms": result["time_ms"],
                     "total_time_ms": total_time
                 },
-                "message": f"Text extracted in {total_time:.1f}ms using {result['method']}"
+                "message": f"Text extracted in {total_time:.1f}ms using {result['method']}" + (f" ({word_count} words)" if word_count > 0 else " (no text found)")
             }
         
         elif file.content_type in ['image/jpeg', 'image/jpg', 'image/png']:
@@ -185,22 +287,16 @@ async def analyze_document_with_llm(file: UploadFile = File(...)):
                 detail="Insufficient text content for meaningful analysis"
             )
         
-        # Get OpenRouter API key from environment
-        openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
-        print(f"DEBUG: Environment variables: {list(os.environ.keys())}")
-        print(f"DEBUG: OPENROUTER_API_KEY exists: {bool(openrouter_api_key)}")
-        if not openrouter_api_key:
-            print("ERROR: OpenRouter API key not found in environment")
-            raise HTTPException(
-                status_code=500, 
-                detail="OpenRouter API key not configured"
-            )
+        # LM Studio configuration
+        lm_studio_url = "http://127.0.0.1:1234"
+        lm_studio_model = "google/gemma-3-1b"
         
-        print(f"Using OpenRouter API key: {openrouter_api_key[:10]}...")
+        print(f"Using LM Studio at {lm_studio_url} with model {lm_studio_model}")
         
         # Prepare the system prompt for mortgage banking analysis
-        system_prompt = """You are an expert mortgage house banker and document analyst with over 20 years of experience in residential and commercial lending. Your expertise includes:
+        system_prompt = """You are a senior mortgage house banker and document analyst with over 20 years of experience in residential and commercial lending in Australia. Your role is to assess documents submitted by mortgage applicants to determine their suitability for home loans.
 
+YOUR EXPERTISE INCLUDES:
 - Document verification and authenticity assessment
 - Income and employment verification
 - Asset and liability evaluation  
@@ -209,99 +305,133 @@ async def analyze_document_with_llm(file: UploadFile = File(...)):
 - Property valuation analysis
 - Loan serviceability calculations
 
-Analyze the provided document text and provide a comprehensive mortgage banking assessment. Focus on:
+CRITICAL INSTRUCTIONS:
+1. FIRST, carefully read and understand the entire document text provided
+2. DETERMINE if this document is relevant and useful for mortgage lending decisions
+3. If the document is NOT relevant to mortgage lending (e.g., academic papers, unrelated business documents, personal letters), clearly state this and explain why it's not useful for mortgage assessment
+4. If the document IS relevant, proceed with comprehensive analysis
 
-1. **Document Type & Purpose**: Identify what type of document this is and its relevance to mortgage applications
-2. **Key Financial Information**: Extract and analyze any financial data, income figures, assets, liabilities
-3. **Verification Points**: Highlight information that would need verification or raises questions
-4. **Risk Assessment**: Identify any potential risks or red flags from a lending perspective
-5. **Compliance Notes**: Note any regulatory or compliance considerations
-6. **Recommendations**: Provide specific recommendations for loan officers or underwriters
+FOR RELEVANT DOCUMENTS, provide analysis in these sections:
 
-Format your response as a structured analysis with clear sections. Be thorough but concise, focusing on actionable insights for mortgage decision-making."""
+1. **Document Relevance Assessment**: State clearly whether this document is useful for mortgage lending and why
+2. **Document Type & Purpose**: Identify what type of document this is and its specific relevance to mortgage applications
+3. **Key Financial Information**: Extract and analyze any financial data, income figures, assets, liabilities, employment details
+4. **Verification Points**: Highlight information that would need verification or raises questions
+5. **Risk Assessment**: Identify any potential risks or red flags from a lending perspective
+6. **Compliance Notes**: Note any regulatory or compliance considerations (NCCP, APRA)
+7. **Lending Recommendations**: Provide specific recommendations for loan officers or underwriters
 
-        user_prompt = f"""Please analyze this document text from a mortgage banking perspective:
+REMEMBER: Your role is to help make informed lending decisions. Be honest about document relevance and provide actionable insights only when the document contains mortgage-relevant information."""
 
-DOCUMENT TEXT:
-{extracted_text[:4000]}  # Limit to first 4000 chars to stay within token limits
-
-Provide a comprehensive analysis following the structure outlined in your system instructions."""
-
-        # Call OpenRouter API with GPT-OSS 20B
-        headers = {
-            "Authorization": f"Bearer {openrouter_api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "http://localhost:8000",
-            "X-Title": "Mortgage Document Intelligence"
-        }
+        # Handle large documents by intelligently truncating while preserving key information
+        max_chars = 8000  # Conservative limit for Gemma-3-1B context window (~2K tokens)
         
-        payload = {
-            "model": "openai/gpt-oss-20b:free",  # Using GPT-OSS 20B free variant as requested
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            "max_tokens": 2000,
-            "temperature": 0.3,  # Lower temperature for more consistent analysis
-            "top_p": 0.9
-        }
-        
-        # Make the API call
-        print(f"Making OpenRouter API call with model: {payload['model']}")
-        print(f"Request headers: {headers}")
-        
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=60
-        )
-        
-        print(f"OpenRouter API response status: {response.status_code}")
-        
-        if response.status_code != 200:
-            print(f"OpenRouter API error response: {response.text}")
-            print(f"Response headers: {dict(response.headers)}")
+        if len(extracted_text) > max_chars:
+            # For large documents, take first part + last part to capture beginning and end
+            first_part = extracted_text[:max_chars//2]
+            last_part = extracted_text[-(max_chars//2):]
             
-            # Check if it's an authentication issue
-            if response.status_code == 401:
-                error_detail = "Authentication failed. Please check your OpenRouter API key. You may need to create a new API key at https://openrouter.ai/keys"
-            else:
-                error_detail = f"OpenRouter API error: {response.status_code} - {response.text}"
+            document_text = f"""[DOCUMENT START - First {max_chars//2} characters]
+{first_part}
+
+[DOCUMENT CONTINUES... {len(extracted_text) - max_chars} characters omitted for analysis]
+
+[DOCUMENT END - Last {max_chars//2} characters]
+{last_part}
+
+[TOTAL DOCUMENT LENGTH: {len(extracted_text)} characters]"""
+        else:
+            document_text = extracted_text
+
+        user_prompt = f"""As a senior mortgage banker, please carefully read the following document text and assess its relevance for mortgage lending decisions.
+
+DOCUMENT TEXT TO ANALYZE:
+{document_text}
+
+ANALYSIS INSTRUCTIONS:
+1. First, read the entire document text carefully (note: for large documents, key sections from beginning and end are shown)
+2. Determine if this document is relevant for mortgage lending assessment
+3. If NOT relevant, explain why and stop analysis
+4. If relevant, provide comprehensive mortgage banking analysis following the 7-section structure from your system instructions
+
+Begin your analysis now:"""
+
+        # Use LM Studio for analysis
+        try:
+            print(f"🏠 Using LM Studio at {lm_studio_url}...")
+            
+            payload = {
+                "model": lm_studio_model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                "max_tokens": 2000,
+                "temperature": 0.3,
+                "top_p": 0.9
+            }
+            
+            response = requests.post(
+                f"{lm_studio_url}/v1/chat/completions",
+                headers={"Content-Type": "application/json"},
+                json=payload,
+                timeout=90
+            )
+            
+            print(f"LM Studio API response status: {response.status_code}")
+            print(f"Document text length: {len(document_text)} characters")
+            
+            if response.status_code == 200:
+                response_data = response.json()
                 
+                if response_data.get("choices") and response_data["choices"][0].get("message"):
+                    llm_analysis = response_data["choices"][0]["message"]["content"]
+                    total_time = (time.time() - start_time) * 1000
+                    
+                    print("✅ LM Studio analysis completed successfully")
+                    
+                    return {
+                        "success": True,
+                        "data": {
+                            "filename": file.filename,
+                            "document_type": "mortgage_document_analysis",
+                            "extracted_text": extracted_text,
+                            "llm_analysis": llm_analysis,
+                            "model_used": f"{lm_studio_model} (LM Studio)",
+                            "confidence_score": 0.95,  # Higher confidence for local model
+                            "word_count": len(extracted_text.split()) if extracted_text else 0,
+                            "analysis_time_ms": total_time,
+                            "tokens_analyzed": len(extracted_text[:4000].split())
+                        },
+                        "message": f"Advanced mortgage banking analysis completed in {total_time:.1f}ms using LM Studio"
+                    }
+                else:
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Invalid response from LM Studio API"
+                    )
+            else:
+                error_text = response.text
+                print(f"❌ LM Studio error response: {error_text}")
+                
+                if response.status_code == 400:
+                    # Likely context length exceeded
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Document too large for analysis. Document length: {len(document_text)} characters. Try with a smaller document or contact support."
+                    )
+                else:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"LM Studio API error: {response.status_code} - {error_text}"
+                    )
+                    
+        except requests.exceptions.RequestException as e:
+            print(f"❌ LM Studio connection failed: {str(e)}")
             raise HTTPException(
-                status_code=500,
-                detail=error_detail
+                status_code=503,
+                detail="LM Studio is not running. Please start LM Studio and ensure the server is running on http://127.0.0.1:1234"
             )
-        
-        response_data = response.json()
-        
-        if not response_data.get("choices") or not response_data["choices"][0].get("message"):
-            raise HTTPException(
-                status_code=500,
-                detail="Invalid response from OpenRouter API"
-            )
-        
-        llm_analysis = response_data["choices"][0]["message"]["content"]
-        
-        # Calculate processing time
-        total_time = (time.time() - start_time) * 1000
-        
-        return {
-            "success": True,
-            "data": {
-                "filename": file.filename,
-                "document_type": "mortgage_document_analysis",
-                "extracted_text": extracted_text,
-                "llm_analysis": llm_analysis,
-                "model_used": "openai/gpt-oss-20b:free",
-                "confidence_score": 0.92,
-                "word_count": len(extracted_text.split()) if extracted_text else 0,
-                "analysis_time_ms": total_time,
-                "tokens_analyzed": len(extracted_text[:4000].split())
-            },
-            "message": f"Advanced mortgage banking analysis completed in {total_time:.1f}ms"
-        }
         
     except HTTPException:
         raise
@@ -316,5 +446,6 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
     print(f"🚀 Starting Fast Document Intelligence API on port {port}")
     print("📄 Optimized for lightning-fast PDF text extraction")
-    print("🧠 Enhanced with GPT-OSS 20B mortgage banking analysis")
+    print("🏠 Enhanced with LM Studio Gemma-3-1B mortgage banking analysis")
+    print("🔥 No rate limits - unlimited local AI processing!")
     uvicorn.run(app, host="0.0.0.0", port=port)
